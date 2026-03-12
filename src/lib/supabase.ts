@@ -20,7 +20,12 @@ export function isSupabaseReady(): boolean {
   return supabase !== null;
 }
 
-// 保存记录到 Supabase
+// 获取当前用户ID
+function getCurrentUserId(): string {
+  return localStorage.getItem('userId') || 'anonymous';
+}
+
+// 保存记录到 Supabase（带用户ID）
 export async function saveRecordToSupabase(record: {
   id: string;
   date: string;
@@ -36,15 +41,137 @@ export async function saveRecordToSupabase(record: {
   }
 
   try {
+    const userId = getCurrentUserId();
+    const recordWithUser = { ...record, user_id: userId };
+
     const { error } = await supabase
       .from('records')
-      .upsert([record], { onConflict: 'id' });
+      .upsert([recordWithUser], { onConflict: 'id' });
 
     if (error) throw error;
+    console.log('📤 记录已同步到云端');
     return { success: true };
   } catch (error) {
     console.error('保存到Supabase失败:', error);
     return { success: false, error: String(error) };
+  }
+}
+
+// 从 Supabase 加载当前用户的记录
+export async function loadRecordsFromSupabase(): Promise<any[]> {
+  if (!supabase) {
+    return [];
+  }
+
+  try {
+    const userId = getCurrentUserId();
+    const { data, error } = await supabase
+      .from('records')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false });
+
+    if (error) throw error;
+    console.log('📥 从云端加载记录:', data?.length || 0, '条');
+    return data || [];
+  } catch (error) {
+    console.error('加载记录失败:', error);
+    return [];
+  }
+}
+
+// 保存用户信息到 Supabase（包含密码）
+export async function saveUserInfoToSupabase(userInfo: {
+  babyName: string;
+  dueDate: string;
+  password?: string;
+}): Promise<{ success: boolean }> {
+  if (!supabase) {
+    return { success: false };
+  }
+
+  try {
+    const userId = getCurrentUserId();
+    const { error } = await supabase
+      .from('users')
+      .upsert([{
+        id: userId,
+        baby_name: userInfo.babyName,
+        due_date: userInfo.dueDate,
+        password: userInfo.password,
+        updated_at: Date.now()
+      }], { onConflict: 'id' });
+
+    if (error) throw error;
+    console.log('📤 用户信息已保存到云端');
+    return { success: true };
+  } catch (error) {
+    console.error('保存用户信息失败:', error);
+    return { success: false };
+  }
+}
+
+// 从 Supabase 获取用户信息（包含密码验证）
+export async function getUserInfoFromSupabase(phone: string, password: string): Promise<{
+  success: boolean;
+  userInfo?: { babyName: string; dueDate: string };
+}> {
+  if (!supabase) {
+    return { success: false };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('baby_name, due_date, password')
+      .eq('id', phone)
+      .single();
+
+    if (error) {
+      // 用户不存在
+      if (error.code === 'PGRST116') {
+        return { success: false };
+      }
+      throw error;
+    }
+
+    // 验证密码
+    if (data.password !== password) {
+      return { success: false };
+    }
+
+    return {
+      success: true,
+      userInfo: {
+        babyName: data.baby_name,
+        dueDate: data.due_date
+      }
+    };
+  } catch (error) {
+    console.error('获取用户信息失败:', error);
+    return { success: false };
+  }
+}
+
+// 检查手机号是否已注册
+export async function checkPhoneExists(phone: string): Promise<boolean> {
+  if (!supabase) {
+    return false;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', phone)
+      .single();
+
+    if (error) {
+      return false;
+    }
+    return !!data;
+  } catch {
+    return false;
   }
 }
 
@@ -57,6 +184,8 @@ export function subscribeToRecords(
     return () => {};
   }
 
+  const userId = getCurrentUserId();
+
   const channel = supabase
     .channel('records-changes')
     .on(
@@ -65,97 +194,69 @@ export function subscribeToRecords(
         event: '*',
         schema: 'public',
         table: 'records',
+        filter: `user_id=eq.${userId}`
       },
-      (_payload) => {
-        fetchRecords(callback);
+      async () => {
+        const records = await loadRecordsFromSupabase();
+        callback(records);
       }
     )
     .subscribe();
 
-  fetchRecords(callback);
+  // 初始加载
+  loadRecordsFromSupabase().then(callback);
 
   return () => {
     supabase?.removeChannel(channel);
   };
 }
 
-async function fetchRecords(callback: (records: unknown[]) => void) {
-  if (!supabase) {
-    callback([]);
-    return;
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from('records')
-      .select('*')
-      .order('createdAt', { ascending: false })
-      .limit(100);
-
-    if (error) throw error;
-    callback(data || []);
-  } catch (error) {
-    console.error('获取记录失败:', error);
-    callback([]);
-  }
-}
-
-// 爸爸发送留言
+// 保存爸爸留言
 export async function sendDadMessage(
   recordId: string,
   message: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean }> {
   if (!supabase) {
-    return { success: false, error: 'Supabase not initialized' };
+    return { success: false };
   }
 
   try {
     const { error } = await supabase
       .from('records')
       .update({
-        dadMessage: message,
-        hasDadInteraction: true,
-        dadMessageTime: Date.now(),
-        updatedAt: new Date().toISOString(),
+        dad_message: message,
+        has_dad_interaction: true,
+        dad_message_time: Date.now()
       })
       .eq('id', recordId);
 
     if (error) throw error;
     return { success: true };
   } catch (error) {
-    console.error('发送爸爸留言失败:', error);
-    return { success: false, error: String(error) };
+    console.error('保存爸爸留言失败:', error);
+    return { success: false };
   }
 }
 
 // 发送飞吻
-export async function sendKiss(recordId: string): Promise<{ success: boolean; error?: string }> {
+export async function sendKiss(recordId: string): Promise<{ success: boolean }> {
   if (!supabase) {
-    return { success: false, error: 'Supabase not initialized' };
+    return { success: false };
   }
 
   try {
     const { error } = await supabase
       .from('records')
       .update({
-        kissSent: true,
-        kissTime: Date.now(),
-        updatedAt: new Date().toISOString(),
+        kiss_sent: true,
+        kiss_time: Date.now()
       })
       .eq('id', recordId);
 
     if (error) throw error;
-
-    if (navigator.vibrate) {
-      navigator.vibrate(200);
-    }
-
     return { success: true };
   } catch (error) {
     console.error('发送飞吻失败:', error);
-    return { success: false, error: String(error) };
+    return { success: false };
   }
 }
-
-// 初始化
-initSupabase();

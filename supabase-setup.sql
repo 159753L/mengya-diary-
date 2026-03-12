@@ -1,20 +1,13 @@
 -- Supabase 数据库设置脚本
 -- 在 Supabase Dashboard 的 SQL Editor 中执行
 
--- 创建孕期记录表
-CREATE TABLE IF NOT EXISTS records (
-  id TEXT PRIMARY KEY,
-  date TEXT NOT NULL,
-  week_number INTEGER NOT NULL,
-  day_number INTEGER,
-  mom_message TEXT NOT NULL,
-  mom_mood TEXT NOT NULL,
-  dad_message TEXT,
-  has_dad_interaction BOOLEAN DEFAULT FALSE,
-  dad_message_time BIGINT,
-  kiss_sent BOOLEAN DEFAULT FALSE,
-  kiss_time BIGINT,
-  created_at BIGINT NOT NULL,
+-- 创建用户表（用于登录和存储宝宝信息）
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY, -- 手机号作为ID
+  baby_name TEXT NOT NULL,
+  due_date TEXT NOT NULL,
+  password TEXT NOT NULL, -- 登录密码
+  created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
   updated_at BIGINT
 );
 
@@ -27,9 +20,16 @@ CREATE INDEX IF NOT EXISTS idx_records_created_at ON records(created_at DESC);
 
 -- 开启RLS（行级安全策略）
 ALTER TABLE records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
 -- 允许所有用户读取和写入记录
 CREATE POLICY "Allow public access to records" ON records
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 允许所有用户读取和写入用户信息
+CREATE POLICY "Allow public access to users" ON users
   FOR ALL
   USING (true)
   WITH CHECK (true);

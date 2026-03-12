@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../hooks/useApp';
-import { exportData, clearAllData } from '../lib/storage';
+import { clearAllData } from '../lib/storage';
 import BottomNav from '../components/BottomNav';
 import { getNotificationPermission } from '../components/PushNotification';
 
@@ -32,23 +32,23 @@ export default function Settings() {
 
   const handleSave = () => {
     if (!dueDate || !babyName) return;
-    setUserInfo({
+
+    const userInfoData = {
       dueDate,
       babyName,
       createdAt: userInfo?.createdAt || Date.now(),
-    });
-    alert('保存成功！');
-  };
+    };
 
-  const handleExport = () => {
-    const data = exportData();
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `萌芽日记-备份-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // 保存到App Context
+    setUserInfo(userInfoData);
+
+    // 保存到用户关联的存储（同一手机号再次登录可读取）
+    const userId = localStorage.getItem('userId');
+    if (userId) {
+      localStorage.setItem(`user_${userId}`, JSON.stringify(userInfoData));
+    }
+
+    alert('保存成功！');
   };
 
   const handleClear = () => {
@@ -105,24 +105,6 @@ export default function Settings() {
           >
             保存修改
           </button>
-        </div>
-      </div>
-
-      {/* 数据管理 */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 shadow-md mb-4 max-w-sm mx-auto">
-        <h3 className="font-bold text-gray-700 mb-4">数据管理</h3>
-
-        <div className="space-y-3">
-          <button
-            onClick={handleExport}
-            className="w-full bg-blue-500 text-white py-3 rounded-xl font-medium"
-          >
-            导出数据备份 💾
-          </button>
-
-          <p className="text-gray-400 text-xs text-center">
-            导出为JSON文件，可用于数据备份
-          </p>
         </div>
       </div>
 
@@ -204,6 +186,21 @@ export default function Settings() {
           分享给朋友 📤
         </button>
       </div>
+
+      {/* 退出登录 */}
+      <button
+        onClick={() => {
+          if (confirm('确定要退出登录吗？')) {
+            // 只清除登录状态，保留用户数据（手机号关联的宝宝信息）
+            localStorage.removeItem('userId');
+            localStorage.removeItem('loginTime');
+            window.location.href = '/login';
+          }
+        }}
+        className="w-full mt-4 bg-gray-100 text-gray-600 py-3 rounded-xl font-medium max-w-sm mx-auto block"
+      >
+        退出登录 🚪
+      </button>
 
       {/* 危险区域 */}
       <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 shadow-md max-w-sm mx-auto">

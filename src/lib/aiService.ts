@@ -77,22 +77,80 @@ export async function getMiniMaxAnswer(query: string, history?: { role: string; 
   const memory = await getMemory();
   console.log('[AI] 用户记忆:', memory ? '有' : '无');
 
-  // 构建提示词
-  let systemPrompt = `你是一位专业、温暖、有爱心的孕期助手。请严格按照"参考知识"来回答用户的问题。
+  // 获取用户孕周信息
+  let pregnancyInfo = '';
+  try {
+    const userInfoStr = localStorage.getItem('userInfo');
+    if (userInfoStr) {
+      const userInfo = JSON.parse(userInfoStr);
+      if (userInfo.dueDate) {
+        // 计算当前孕周
+        const today = new Date();
+        const dueDate = new Date(userInfo.dueDate);
+        const diffTime = dueDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const currentWeek = 40 - Math.floor(diffDays / 7);
 
-重要规则：
-1. 必须严格参考知识库中的答案，不要自行发挥
-2. 如果知识库中包含【重要安全提示】或【紧急情况】，必须原样引用并强调
-3. 回答要具体、实用，针对用户问题给出具体建议
-4. 对于出血、见红、破水、剧烈腹痛等危险症状，必须提醒"请立即就医"
-5. 语气温柔，带适当的 emoji
+        let phase = '';
+        if (currentWeek <= 12) phase = '孕早期';
+        else if (currentWeek <= 27) phase = '孕中期';
+        else phase = '孕晚期';
+
+        pregnancyInfo = `\n## 用户当前状态：\n- 当前孕周：第${currentWeek}周（第${currentWeek * 7}天）\n- 孕期阶段：${phase}\n- 距离预产期：约${diffDays}天\n`;
+        console.log('[AI] 孕周信息:', pregnancyInfo);
+      }
+    }
+  } catch (e) {
+    console.log('[AI] 获取孕周信息失败');
+  }
+
+  // 构建提示词
+  let systemPrompt = `你是一位专业、温暖、有爱心的孕期助手。
+
+【最关键的规则】
+用户现在正处于孕期第${(function(){
+  try {
+    const userInfoStr = localStorage.getItem('userInfo');
+    if(userInfoStr){
+      const userInfo = JSON.parse(userInfoStr);
+      const today = new Date();
+      const dueDate = new Date(userInfo.dueDate);
+      const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      return 40 - Math.floor(diffDays / 7);
+    }
+  }catch(e){}
+  return 'X';
+})()}周（孕${(function(){
+  try {
+    const userInfoStr = localStorage.getItem('userInfo');
+    if(userInfoStr){
+      const userInfo = JSON.parse(userInfoStr);
+      const today = new Date();
+      const dueDate = new Date(userInfo.dueDate);
+      const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const w = 40 - Math.floor(diffDays / 7);
+      return w <= 12 ? '早' : w <= 27 ? '中' : '晚';
+    }
+  }catch(e){}
+  return 'X';
+})()}期）！
 
 回答要求：
-1. 简洁明了，控制在200字以内
-2. 先解释原因，再给出具体解决方案
-3. 如果知识库没有相关信息，诚实的说"我需要再学习一下"并建议咨询医生
+1. 回答时必须首先考虑用户当前是第几周，针对该孕周给出具体建议
+2. 必须是"孕X周应该这样做"，而不是泛泛而谈"怀孕早期/中期/晚期"
+3. 严格参考知识库中的答案
+4. 如果知识库中包含【重要安全提示】或【紧急情况】，必须原样引用并强调
+5. 对于出血、见红、破水、剧烈腹痛等危险症状，必须提醒"请立即就医"
+6. 语气温柔，带适当的 emoji
+7. 简洁明了，控制在200字以内
+8. 如果知识库没有相关信息，诚实的说"我需要再学习一下"并建议咨询医生
 
 `;
+
+  // 加入用户孕周信息
+  if (pregnancyInfo) {
+    systemPrompt += pregnancyInfo;
+  }
 
   // 如果有用户记忆，加入到提示词中
   if (memory) {

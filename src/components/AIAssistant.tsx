@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { getAnswer, isAIConfigured, isRAGConfigured } from '../lib/aiService';
 
 // 对话消息类型
@@ -7,13 +7,37 @@ interface Message {
   content: string;
 }
 
+// 从localStorage加载历史记录
+const loadMessages = (): Message[] => {
+  try {
+    const saved = localStorage.getItem('ai_chat_history');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {}
+  return [];
+};
+
+// 保存历史记录到localStorage
+const saveMessages = (messages: Message[]) => {
+  try {
+    localStorage.setItem('ai_chat_history', JSON.stringify(messages));
+  } catch (e) {}
+};
+
 export default function AIAssistant() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [query, setQuery] = useState('');
   const [answer, setAnswer] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  // 对话历史
-  const [messages, setMessages] = useState<Message[]>([]);
+  // 对话历史 - 从localStorage加载
+  const [messages, setMessages] = useState<Message[]>(loadMessages);
+
+  // 保存到localStorage
+  useEffect(() => {
+    saveMessages(messages);
+  }, [messages]);
 
   // 初始坐标
   const [pos, setPos] = useState({
@@ -118,23 +142,65 @@ export default function AIAssistant() {
 
       {/* 面板 */}
       {isOpen && (
-        <div style={{
-          position: 'fixed',
-          left: (pos.x - 310) + 'px',
-          top: pos.y + 'px',
-          zIndex: 2147483646,
-          width: '300px',
-          background: 'white',
-          borderRadius: '16px',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.15)',
-          overflow: 'hidden'
-        }}>
-          <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #a78bfa, #6366f1)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div
+          style={{
+            position: isExpanded ? 'fixed' : 'fixed',
+            left: isExpanded ? '50%' : (pos.x - 310) + 'px',
+            top: isExpanded ? '50%' : pos.y + 'px',
+            transform: isExpanded ? 'translate(-50%, -50%)' : 'none',
+            zIndex: 2147483646,
+            width: isExpanded ? '90%' : '300px',
+            maxWidth: isExpanded ? '500px' : '300px',
+            height: isExpanded ? '70vh' : 'auto',
+            maxHeight: isExpanded ? '70vh' : '400px',
+            background: 'white',
+            borderRadius: isExpanded ? '20px' : '16px',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          {/* 头部 */}
+          <div style={{
+            padding: '12px 16px',
+            background: 'linear-gradient(135deg, #a78bfa, #6366f1)',
+            color: 'white',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexShrink: 0
+          }}>
             <span style={{ fontWeight: 'bold' }}>孕期小助手</span>
-            <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {/* 扩大/缩小按钮 */}
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                style={{ background: 'none', border: 'none', color: 'white', fontSize: '14px', cursor: 'pointer' }}
+                title={isExpanded ? '缩小' : '扩大'}
+              >
+                {isExpanded ? '🔽' : '🔼'}
+              </button>
+              {messages.length > 0 && (
+                <button
+                  onClick={() => { if (confirm('确定清除对话历史吗？')) { setMessages([]); saveMessages([]); } }}
+                  style={{ background: 'none', border: 'none', color: 'white', fontSize: '12px', cursor: 'pointer', opacity: 0.8 }}
+                  title="清除历史"
+                >
+                  🗑️
+                </button>
+              )}
+              <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+            </div>
           </div>
 
-          <div style={{ padding: '16px', maxHeight: '250px', overflowY: 'auto' }}>
+          {/* 对话内容 */}
+          <div style={{
+            padding: '16px',
+            flex: 1,
+            overflowY: 'auto',
+            minHeight: isExpanded ? '300px' : 'auto'
+          }}>
             {/* 显示对话历史 */}
             {messages.map((msg, i) => (
               <div key={i} style={{ marginBottom: '12px' }}>
@@ -162,7 +228,7 @@ export default function AIAssistant() {
               <div>
                 <p style={{ fontSize: '14px', color: '#999', textAlign: 'center' }}>有什么孕期问题可以问我哦～</p>
                 {isRAGConfigured() ? (
-                  <p style={{ fontSize: '12px', color: '#8b5cf6', textAlign: 'center', marginTop: '8px' }}>🧠 向量RAG</p>
+                  <p style={{ fontSize: '12px', color: '#8b5cf6', textAlign: 'center', marginTop: '8px' }}>🧠 向量RAG · 已保存全部历史</p>
                 ) : isAIConfigured() ? (
                   <p style={{ fontSize: '12px', color: '#8b5cf6', textAlign: 'center', marginTop: '8px' }}>✨ AI + 知识库</p>
                 ) : (
@@ -172,7 +238,7 @@ export default function AIAssistant() {
             )}
           </div>
 
-          <div style={{ padding: '12px 16px', borderTop: '1px solid #eee', display: 'flex', gap: '8px' }}>
+          <div style={{ padding: '12px 16px', borderTop: '1px solid #eee', display: 'flex', gap: '8px', flexShrink: 0 }}>
             <input
               type="text"
               value={query}

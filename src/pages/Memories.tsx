@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../hooks/useApp';
-import { generateMemoryBookPDF } from '../lib/pdfExport';
+import { exportMemoryPoster } from '../lib/imageExport';
 import BottomNav from '../components/BottomNav';
+import BabyIllustration from '../components/BabyIllustration';
 
 export default function Memories() {
   const [exporting, setExporting] = useState(false);
+  const [showPoster, setShowPoster] = useState(false);
+  const posterRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { userInfo, phase, allRecords, dadContributionCount, currentWeek } = useApp();
 
@@ -32,17 +35,13 @@ export default function Memories() {
   // 爸爸贡献度
   const dadMedal = dadContributionCount >= 20;
 
-  // 导出回忆录
-  const handleExportPDF = async () => {
+  // 导出回忆录海报
+  const handleExportPoster = async () => {
     if (!userInfo || allRecords.length === 0) return;
 
     setExporting(true);
     try {
-      await generateMemoryBookPDF({
-        babyName: userInfo.babyName,
-        dueDate: userInfo.dueDate,
-        records: allRecords,
-      });
+      await exportMemoryPoster('memory-poster', userInfo.babyName, currentWeek);
     } catch (error) {
       console.error('导出失败:', error);
     } finally {
@@ -142,11 +141,21 @@ export default function Memories() {
         {/* 导出按钮 */}
         {allRecords.length > 0 && (
           <button
-            onClick={handleExportPDF}
+            onClick={handleExportPoster}
             disabled={exporting}
             className="w-full mt-4 bg-pink-500 text-white py-2 rounded-xl text-sm font-medium disabled:opacity-50"
           >
-            {exporting ? '导出中...' : '📥 导出回忆录'}
+            {exporting ? '生成中...' : '📥 导出精美海报'}
+          </button>
+        )}
+
+        {/* 预览海报按钮 */}
+        {allRecords.length > 0 && (
+          <button
+            onClick={() => setShowPoster(true)}
+            className="w-full mt-2 bg-purple-100 text-purple-600 py-2 rounded-xl text-sm font-medium"
+          >
+            👀 预览海报
           </button>
         )}
       </div>
@@ -177,6 +186,81 @@ export default function Memories() {
       )}
 
       <BottomNav />
+
+      {/* 海报预览弹窗 */}
+      {showPoster && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-auto">
+            {/* 海报内容 */}
+            <div id="memory-poster" ref={posterRef} className="p-6 bg-gradient-to-br from-pink-50 to-purple-50">
+              <div className="text-center">
+                {/* 宝宝插画 */}
+                <div className="mb-4 flex justify-center">
+                  <BabyIllustration weekNumber={currentWeek} size="medium" />
+                </div>
+
+                {/* 标题 */}
+                <h2 className="text-2xl font-bold text-pink-600 mb-2">
+                  {userInfo?.babyName}的成长记录
+                </h2>
+                <p className="text-gray-500 mb-4">第 {currentWeek} 周</p>
+
+                {/* 统计数据 */}
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="bg-white rounded-xl p-3 shadow-sm">
+                    <p className="text-2xl font-bold text-pink-500">{allRecords.length}</p>
+                    <p className="text-xs text-gray-400">打卡天数</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-3 shadow-sm">
+                    <p className="text-2xl font-bold text-orange-500">{getStreak()}</p>
+                    <p className="text-xs text-gray-400">连续天数</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-3 shadow-sm">
+                    <p className="text-2xl font-bold text-blue-500">{dadContributionCount}</p>
+                    <p className="text-xs text-gray-400">爸爸参与</p>
+                  </div>
+                </div>
+
+                {/* 进度条 */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm text-gray-500 mb-1">
+                    <span>孕周进度</span>
+                    <span>{currentWeek}/40周</span>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-pink-400 to-purple-400 rounded-full"
+                      style={{ width: `${(currentWeek / 40) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* 日期 */}
+                <p className="text-gray-400 text-sm">
+                  {new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+            </div>
+
+            {/* 操作按钮 */}
+            <div className="p-4 border-t flex gap-3">
+              <button
+                onClick={() => setShowPoster(false)}
+                className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-600 font-medium"
+              >
+                关闭
+              </button>
+              <button
+                onClick={handleExportPoster}
+                disabled={exporting}
+                className="flex-1 py-3 rounded-xl bg-pink-500 text-white font-medium disabled:opacity-50"
+              >
+                {exporting ? '保存中...' : '💾 保存到相册'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

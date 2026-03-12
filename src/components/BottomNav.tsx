@@ -16,22 +16,8 @@ export default function BottomNav() {
     return 'text-pink-500';
   };
 
-  const toggleWhiteNoise = () => {
-    sessionStorage.setItem('toggleWhiteNoise', Date.now().toString());
-  };
-
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-100 pb-safe">
-      {/* 白噪音按钮 - 放在记心声上方 */}
-      <div className="flex justify-center -mb-2">
-        <button
-          onClick={toggleWhiteNoise}
-          className="w-10 h-8 bg-gradient-to-r from-cyan-400 to-blue-400 rounded-full flex items-center justify-center shadow-md"
-          title="白噪音"
-        >
-          <span className="text-lg">🎵</span>
-        </button>
-      </div>
       <div className="flex justify-around items-end px-2 py-3 max-w-md mx-auto">
         {/* 左一：森林 - 首页 */}
         <button

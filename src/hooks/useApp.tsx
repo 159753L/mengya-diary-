@@ -5,7 +5,7 @@ import { saveUserInfo, getUserInfo, saveRecord, getRecordByDate, getRecords, get
 import { getCurrentWeekInfo, getCheckCountdown } from '../data/weekInfo';
 import { randomPick } from '../lib/utils';
 import { QUESTIONS, MOOD_RESPONSES } from '../data/questions';
-import { saveRecordToSupabase, sendDadMessage as sendDadMessageToSupabase, sendKiss as sendKissToSupabase, isSupabaseReady } from '../lib/supabase';
+import { saveRecordToSupabase, sendDadMessage as sendDadMessageToSupabase, sendKiss as sendKissToSupabase, isSupabaseReady, subscribeToRecords, initSupabase, loadRecordsFromSupabase } from '../lib/supabase';
 
 interface AppState {
   userInfo: UserInfo | null;
@@ -22,6 +22,8 @@ interface AppState {
 }
 
 interface AppContextType extends AppState {
+  userId: string | null;
+  setUserId: (id: string) => void;
   setUserInfo: (info: UserInfo) => void;
   saveTodayRecord: (momMessage: string, momMood: MoodType, dadMessage?: string) => void;
   saveDadMessage: (message: string) => void;
@@ -32,6 +34,7 @@ interface AppContextType extends AppState {
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const [userId, setUserIdState] = useState<string | null>(localStorage.getItem('userId'));
   const [userInfo, setUserInfoState] = useState<UserInfo | null>(null);
   const [currentWeek, setCurrentWeek] = useState(1);
   const [currentDay, setCurrentDay] = useState(1);
@@ -44,7 +47,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [dadContributionCount, setDadContributionCount] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState<{ type: string; text: string }>(QUESTIONS.physical[0]);
 
-  // 初始化
+  // 初始化 - 启动Supabase实时同步
+  useEffect(() => {
+    // 初始化Supabase
+    initSupabase();
+
+    // 如果Supabase可用，从云端加载数据
+    if (isSupabaseReady()) {
+      console.log('📡 正在从云端加载数据...');
+
+      // 加载云端记录
+      loadRecordsFromSupabase().then(cloudRecords => {
+        if (cloudRecords && cloudRecords.length > 0) {
+          console.log('📥 云端记录:', cloudRecords.length, '条');
+          setAllRecords(cloudRecords as DailyRecord[]);
+
+          // 今日记录也用云端
+          const today = getDateString();
+          const todayRecord = cloudRecords.find((r: any) => r.date === today);
+          if (todayRecord) {
+            setTodayRecord(todayRecord as DailyRecord);
+          }
+        } else {
+          // 云端没有数据，用本地
+          setAllRecords(getRecords());
+          const today = getDateString();
+          setTodayRecord(getRecordByDate(today));
+        }
+      });
+
+      // 监听实时更新
+      const unsubscribe = subscribeToRecords((records) => {
+        if (records.length > 0) {
+          console.log('📡 收到实时更新:', records.length, '条记录');
+          setAllRecords(records as DailyRecord[]);
+        }
+      });
+      return () => unsubscribe();
+    } else {
+      // 不支持Supabase，用本地数据
+      setAllRecords(getRecords());
+      const today = getDateString();
+      setTodayRecord(getRecordByDate(today));
+    }
+  }, []);
+
+  // 加载本地数据
   useEffect(() => {
     const info = getUserInfo();
     if (info) {
@@ -72,6 +120,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const randomType = randomPick(types);
     setCurrentQuestion(randomPick(QUESTIONS[randomType]));
   }, []);
+
+  // 设置用户ID
+  const setUserId = (id: string) => {
+    localStorage.setItem('userId', id);
+    setUserIdState(id);
+  };
 
   // 设置用户信息
   const setUserInfo = (info: UserInfo) => {
@@ -177,6 +231,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider
       value={{
+        userId,
         userInfo,
         currentWeek,
         currentDay,
@@ -188,6 +243,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         allRecords,
         dadContributionCount,
         currentQuestion,
+        setUserId,
         setUserInfo,
         saveTodayRecord,
         saveDadMessage,
