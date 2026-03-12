@@ -52,7 +52,7 @@ async function detectSymptomChanges(
   currentState: SymptomState,
   newUserMessage: string,
   previousMessages: { role: string; content: string }[]
-): Promise<Partial<SymptomState>> {
+): Promise<Partial<SymptomState> & { added_symptoms?: string[]; resolved_symptoms?: string[] }> {
   if (!MINIMAX_API_KEY) return {};
 
   // 构建上下文

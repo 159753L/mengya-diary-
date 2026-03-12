@@ -15,7 +15,7 @@ import { isRAGConfigured } from './ragService';
 export { isRAGConfigured };
 
 // 使用本地知识库回答（不带AI）
-export function getLocalAnswer(query: string): string {
+export function getLocalAnswer(query: string): string | null {
   const result = searchAnswer(query);
   if (result) {
     return result.answer;

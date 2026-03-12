@@ -95,12 +95,12 @@ export default function AIAssistant() {
     setMessages(newMessages);
 
     // 将历史消息转换为 AI API 格式
-    const historyForAI = messages.map(m => ({ role: m.role, content: m.content }));
+    const historyForAI = messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
     try {
       const result = await getAnswer(query, historyForAI);
       // 保存AI回答到历史
-      const finalMessages = [...newMessages, { role: 'assistant', content: result }];
+      const finalMessages: Message[] = [...newMessages, { role: 'assistant', content: result }];
       setMessages(finalMessages);
       setAnswer(result);
       // 注意：状态更新已在 aiService 中自动处理（实时症状跟踪）
