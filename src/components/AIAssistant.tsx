@@ -1,11 +1,19 @@
 import { useState, useRef } from 'react';
-import { getAnswer, isAIConfigured } from '../lib/aiService';
+import { getAnswer, isAIConfigured, isRAGConfigured } from '../lib/aiService';
+
+// 对话消息类型
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 export default function AIAssistant() {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [answer, setAnswer] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // 对话历史
+  const [messages, setMessages] = useState<Message[]>([]);
 
   // 初始坐标
   const [pos, setPos] = useState({
@@ -57,11 +65,25 @@ export default function AIAssistant() {
   const handleAsk = async () => {
     if (!query.trim() || loading) return;
     setLoading(true);
+
+    // 保存用户问题到历史
+    const newMessages: Message[] = [...messages, { role: 'user', content: query }];
+    setMessages(newMessages);
+
+    // 将历史消息转换为 AI API 格式
+    const historyForAI = messages.map(m => ({ role: m.role, content: m.content }));
+
     try {
-      const result = await getAnswer(query);
+      const result = await getAnswer(query, historyForAI);
+      // 保存AI回答到历史
+      const finalMessages = [...newMessages, { role: 'assistant', content: result }];
+      setMessages(finalMessages);
       setAnswer(result);
+      // 注意：状态更新已在 aiService 中自动处理（实时症状跟踪）
     } catch (error) {
-      setAnswer('抱歉，我现在有点累，让我休息一下...');
+      const errorMsg = '抱歉，我现在有点累，让我休息一下...';
+      setMessages([...newMessages, { role: 'assistant', content: errorMsg }]);
+      setAnswer(errorMsg);
     }
     setQuery('');
     setLoading(false);
@@ -112,19 +134,37 @@ export default function AIAssistant() {
             <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer' }}>✕</button>
           </div>
 
-          <div style={{ padding: '16px', maxHeight: '200px', overflowY: 'auto' }}>
-            {loading ? (
-              <p style={{ fontSize: '14px', color: '#999', textAlign: 'center' }}>🤔 思考中...</p>
-            ) : answer ? (
-              <div>
-                <p style={{ fontSize: '12px', color: '#a78bfa', marginBottom: '8px' }}>问：{query}</p>
-                <p style={{ fontSize: '14px', color: '#333' }}>{answer}</p>
+          <div style={{ padding: '16px', maxHeight: '250px', overflowY: 'auto' }}>
+            {/* 显示对话历史 */}
+            {messages.map((msg, i) => (
+              <div key={i} style={{ marginBottom: '12px' }}>
+                {msg.role === 'user' ? (
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ display: 'inline-block', background: '#a78bfa', color: 'white', padding: '8px 12px', borderRadius: '12px 12px 0 12px', fontSize: '13px', maxWidth: '80%' }}>
+                      {msg.content}
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <span style={{ display: 'inline-block', background: '#f3f4f6', color: '#333', padding: '8px 12px', borderRadius: '12px 12px 12px 0', fontSize: '13px', maxWidth: '90%' }}>
+                      {msg.content}
+                    </span>
+                  </div>
+                )}
               </div>
-            ) : (
+            ))}
+
+            {loading && (
+              <p style={{ fontSize: '14px', color: '#999', textAlign: 'center' }}>🤔 思考中...</p>
+            )}
+
+            {!loading && messages.length === 0 && (
               <div>
                 <p style={{ fontSize: '14px', color: '#999', textAlign: 'center' }}>有什么孕期问题可以问我哦～</p>
-                {isAIConfigured() ? (
-                  <p style={{ fontSize: '12px', color: '#8b5cf6', textAlign: 'center', marginTop: '8px' }}>✨ AI + 知识库 (RAG)</p>
+                {isRAGConfigured() ? (
+                  <p style={{ fontSize: '12px', color: '#8b5cf6', textAlign: 'center', marginTop: '8px' }}>🧠 向量RAG</p>
+                ) : isAIConfigured() ? (
+                  <p style={{ fontSize: '12px', color: '#8b5cf6', textAlign: 'center', marginTop: '8px' }}>✨ AI + 知识库</p>
                 ) : (
                   <p style={{ fontSize: '12px', color: '#ccc', textAlign: 'center', marginTop: '8px' }}>💡 知识库模式</p>
                 )}

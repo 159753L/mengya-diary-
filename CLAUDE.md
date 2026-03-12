@@ -2,6 +2,90 @@
 
 ---
 
+## 📌 Version 2.0.0 (2026-03-12) - AI对话记忆 + 症状状态管理
+
+### 本次更新
+
+#### ✅ AI助手对话记忆功能
+- 支持多轮对话，显示对话历史
+- 用户问题和AI回答按聊天记录显示
+
+#### ✅ 基于实体的状态管理系统（Entity-based State Management）
+采用"状态标签 + 时间戳"方案，解决症状变化跟踪问题：
+
+**数据结构（JSON）：**
+```json
+{
+  "current_symptoms": ["腰酸"],
+  "resolved_symptoms": ["孕吐"],
+  "pregnancy_week": 12,
+  "due_date": "2026-06-15",
+  "last_update": "2026-03-12",
+  "history": [
+    { "symptom": "孕吐", "start_week": 6, "end_week": 12, "status": "resolved" }
+  ]
+}
+```
+
+**核心逻辑：**
+- 实时状态侦听：每一轮对话后自动检测症状变化
+- 状态平移：新症状加入current，消失症状移入resolved
+- 时效控制：已解决症状保留用于数据分析
+- 数据价值：保留完整历史用于产后抑郁预测、营养建议等分析
+
+**相关文件：**
+- `src/lib/memoryService.ts` - 重构为状态管理服务
+- `src/lib/aiService.ts` - 回答后自动调用状态检测
+
+#### ✅ 切换到国内服务（解决VPN问题）
+- Pinecone → Supabase pgvector（服务器在海外，仍需VPN）
+- Jina → MiniMax Embedding（已配置）
+- Supabase API 认证问题待解决
+
+#### ✅ Supabase 表结构更新
+- 创建 `knowledge` 表存储孕期知识库
+- 创建 `records` 表存储打卡记录（云端同步用）
+- RLS 策略已配置
+
+#### ✅ RAG向量检索代码
+- `src/lib/ragService.ts` - 使用 Supabase REST API
+- 当前使用关键词搜索（pgvector 需要额外配置）
+- 暂时禁用自动初始化（API认证问题）
+
+**知识库：**
+- 孕期知识库 **73条** 问答
+
+**环境变量：**
+```
+VITE_SUPABASE_URL=https://rrrqcjyecwekvnqivhrq.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_MINIMAX_API_KEY=sk-cp-cDfA4sGR_...
+VITE_PINECONE_API_KEY=pcsk_2Jib7c_...
+VITE_PINECONE_INDEX=mengya-diary
+VITE_JINA_API_KEY=jina_5aedec453cad4ce0...
+```
+
+**⚠️ 当前状态：**
+- Pinecone 向量数据库在中国大陆无法访问（DNS解析失败/连接被拒绝）
+- RAG 初始化已暂时禁用，代码保留以备将来使用
+- AI助手当前使用**本地知识库 + MiniMax AI** 模式正常工作
+
+**Fallback 机制：**
+- 当向量检索失败时，自动使用本地关键词搜索
+- 保证AI助手在任何情况下都能回答问题
+
+---
+
+### ✅ AI助手升级 (2026-03-11)
+
+**当前AI助手能力：**
+- 孕期知识问答（73条知识库）
+- MiniMax AI 智能回答（已配置Key）
+- 向量语义检索（代码已完成，因网络问题暂时不可用）
+- 本地关键词搜索（当前使用）
+
+---
+
 ## 📌 Version 1.0.0 (2026-03-11)
 基础版本，功能稳定
 
@@ -231,13 +315,39 @@ npm run build
 
 ---
 
-## 下一步行动计划（可选）
+## 下一步行动计划
 
-如果需要启用云端同步功能：
-1. 在 Supabase 创建项目
-2. 替换 `src/lib/supabase.ts` 中的 `supabaseUrl` 和 `supabaseAnonKey`
-3. 在 Supabase 控制台创建 `records` 数据表
+### 1. 修复 Supabase API 认证问题
+
+**当前问题：** 使用 Supabase REST API 时返回 401 错误
+
+**可能原因：**
+- API key 格式问题
+- RLS 策略配置
+- 需要使用 service_role key
+
+**解决方案：**
+- 检查 Supabase 后台 API 设置
+- 或使用 Supabase 客户端而非直接调用 REST API
+
+### 2. 启用 pgvector 向量搜索
+
+当前使用关键词搜索，如需真正的向量语义搜索：
+1. 确保 knowledge 表的 embedding 列已创建
+2. 配置 MiniMax 生成向量
+3. 使用相似度查询
+
+### 3. 云端同步功能
+
+- `records` 表已创建
+- 打卡数据需要配置好认证后才能同步
+
+### 4. 其他优化
+
+- 接入真实白噪音音频文件
+- AI生成40周宝宝插画
+- 优化移动端体验
 
 ---
 
-*最后更新: 2026-03-11 (新增可拖拽AI助手)*
+*最后更新: 2026-03-11 (Version 1.1.0 - RAG向量检索尝试)*

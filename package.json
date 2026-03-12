@@ -1,7 +1,7 @@
 {
   "name": "temp-project",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@pinecone-database/pinecone": "^7.1.0",
     "@supabase/supabase-js": "^2.99.0",
     "firebase": "^12.10.0",
     "html-to-image": "^1.11.13",
+    "jinaai": "^0.1.0",
     "jspdf": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

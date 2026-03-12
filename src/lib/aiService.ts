@@ -2,12 +2,17 @@
 // 方案1: 先检索知识库，再让AI参考知识库回答
 
 import { searchAnswer, KNOWLEDGE_BASE } from '../data/knowledge';
+import { processMemory, getMemory, getState } from './memoryService';
 
 const MINIMAX_API_KEY = import.meta.env.VITE_MINIMAX_API_KEY;
 const MINIMAX_BASE_URL = 'https://api.minimax.chat/v1';
 
 // 判断是否配置了AI
 export const isAIConfigured = () => !!MINIMAX_API_KEY;
+
+// 从 ragService 导入 RAG 配置检查
+import { isRAGConfigured } from './ragService';
+export { isRAGConfigured };
 
 // 使用本地知识库回答（不带AI）
 export function getLocalAnswer(query: string): string {
@@ -56,26 +61,43 @@ export function retrieveKnowledge(query: string): { question: string; answer: st
 }
 
 // 调用 MiniMax AI 回答问题（RAG模式）
-export async function getMiniMaxAnswer(query: string): Promise<string> {
+export async function getMiniMaxAnswer(query: string, history?: { role: string; content: string }[]): Promise<string> {
   // 如果没有配置AI Key，使用本地知识库
   if (!MINIMAX_API_KEY) {
     const localAnswer = getLocalAnswer(query);
     return localAnswer || '抱歉，我的知识库中没有这个问题的答案。建议咨询医生获取专业指导。';
   }
 
-  // 检索知识库
-  const relevantKnowledge = retrieveKnowledge(query);
+  // 从 Supabase 检索知识库（云端）
+  const { vectorSearch } = await import('./ragService');
+  const relevantKnowledge = await vectorSearch(query, 3);
+  console.log('[AI] 从Supabase检索到:', relevantKnowledge.length, '条相关知识');
+
+  // 获取用户长期记忆
+  const memory = await getMemory();
+  console.log('[AI] 用户记忆:', memory ? '有' : '无');
 
   // 构建提示词
-  let systemPrompt = `你是一位专业、温暖、有爱心的孕期助手。请根据"参考知识"来回答用户的问题。如果参考知识中有相关信息，请优先使用参考知识回答；如果没有，再根据你的知识回答。
+  let systemPrompt = `你是一位专业、温暖、有爱心的孕期助手。请严格按照"参考知识"来回答用户的问题。
+
+重要规则：
+1. 必须严格参考知识库中的答案，不要自行发挥
+2. 如果知识库中包含【重要安全提示】或【紧急情况】，必须原样引用并强调
+3. 回答要具体、实用，针对用户问题给出具体建议
+4. 对于出血、见红、破水、剧烈腹痛等危险症状，必须提醒"请立即就医"
+5. 语气温柔，带适当的 emoji
 
 回答要求：
 1. 简洁明了，控制在200字以内
-2. 语气温柔，带适当的 emoji
-3. 如果参考知识和你的知识有冲突，以参考知识为准
-4. 如果不确定，建议咨询医生
+2. 先解释原因，再给出具体解决方案
+3. 如果知识库没有相关信息，诚实的说"我需要再学习一下"并建议咨询医生
 
 `;
+
+  // 如果有用户记忆，加入到提示词中
+  if (memory) {
+    systemPrompt += `\n## 用户历史记忆：\n${memory}\n`;
+  }
 
   let userPrompt = query;
 
@@ -86,9 +108,38 @@ export async function getMiniMaxAnswer(query: string): Promise<string> {
       systemPrompt += `\n【参考${index + 1}】\n问题：${item.question}\n答案：${item.answer}\n`;
     });
     userPrompt += `\n\n请根据以上参考知识回答。`;
+  } else {
+    // 如果 Supabase 没找到，用本地知识库
+    const localKnowledge = retrieveKnowledge(query);
+    if (localKnowledge.length > 0) {
+      systemPrompt += `\n## 参考知识（本地）：\n`;
+      localKnowledge.forEach((item, index) => {
+        systemPrompt += `\n【参考${index + 1}】\n问题：${item.question}\n答案：${item.answer}\n`;
+      });
+      userPrompt += `\n\n请根据以上参考知识回答。`;
+    }
   }
 
   try {
+    // 构建消息列表，包含历史对话和当前问题
+    const messages: { role: string; content: string }[] = [
+      {
+        role: 'system',
+        content: systemPrompt
+      }
+    ];
+
+    // 添加对话历史
+    if (history && history.length > 0) {
+      messages.push(...history);
+    }
+
+    // 添加当前问题
+    messages.push({
+      role: 'user',
+      content: userPrompt
+    });
+
     const response = await fetch(`${MINIMAX_BASE_URL}/text/chatcompletion_v2`, {
       method: 'POST',
       headers: {
@@ -97,16 +148,7 @@ export async function getMiniMaxAnswer(query: string): Promise<string> {
       },
       body: JSON.stringify({
         model: 'abab6.5s-chat',
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: userPrompt
-          }
-        ]
+        messages: messages
       })
     });
 
@@ -117,7 +159,30 @@ export async function getMiniMaxAnswer(query: string): Promise<string> {
     const data = await response.json();
 
     if (data.choices && data.choices[0] && data.choices[0].message) {
-      return data.choices[0].message.content;
+      const answer = data.choices[0].message.content;
+
+      // 回答成功后，默默检测并更新用户状态（症状跟踪）
+      // 从localStorage获取用户孕周信息
+      try {
+        const dueDate = localStorage.getItem('dueDate');
+        const weekInfo = localStorage.getItem('weekInfo');
+        let pregnancyWeek: number | undefined;
+
+        if (weekInfo) {
+          const parsed = JSON.parse(weekInfo);
+          pregnancyWeek = parsed.currentWeek;
+        }
+
+        console.log('[AI] 开始状态检测, 孕周:', pregnancyWeek, '预产期:', dueDate);
+
+        // 实时检测状态变化（每一轮都检测）
+        await processMemory(query, history || [], pregnancyWeek, dueDate || undefined);
+      } catch (e) {
+        console.error('[AI] 状态检测失败:', e);
+        // 静默失败，不影响用户回答
+      }
+
+      return answer;
     }
 
     return '抱歉，我暂时无法回答这个问题。';
@@ -130,15 +195,12 @@ export async function getMiniMaxAnswer(query: string): Promise<string> {
 }
 
 // 统一的回答接口
-export async function getAnswer(query: string): Promise<string> {
+export async function getAnswer(query: string, history?: { role: string; content: string }[]): Promise<string> {
   // 优先使用RAG模式（AI+知识库）
   if (isAIConfigured()) {
-    return getMiniMaxAnswer(query);
+    return getMiniMaxAnswer(query, history);
   }
   // 否则使用纯本地知识库
   const answer = getLocalAnswer(query);
   return answer || '抱歉，我的知识库中没有这个问题的答案。建议咨询医生获取专业指导。';
 }
-
-// 导出检索函数，供调试使用
-export { retrieveKnowledge };
