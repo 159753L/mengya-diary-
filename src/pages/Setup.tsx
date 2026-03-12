@@ -56,6 +56,7 @@ export default function Setup() {
     // 用用户ID作为key存储
     if (userId) {
       localStorage.setItem(`user_${userId}`, JSON.stringify(userInfo));
+      localStorage.setItem('userId', userId); // 保存全局用户ID
     }
 
     // 同时保存到全局
